@@ -76,10 +76,10 @@ struct MenuBarView: View {
 
                 // Temperatures
                 SectionHeader(title: "TEMPERATURES")
-                TemperatureRow(label: "CPU", value: peakTemp(prefixes: ["TC", "Tp"]), fahrenheit: appState.useFahrenheit)
-                TemperatureRow(label: "GPU", value: peakTemp(prefixes: ["TG", "Tg"]), fahrenheit: appState.useFahrenheit)
+                TemperatureRow(label: "CPU", value: peakTemp(prefixes: MenuBarSensor.cpu.prefixes), fahrenheit: appState.useFahrenheit)
+                TemperatureRow(label: "GPU", value: peakTemp(prefixes: MenuBarSensor.gpu.prefixes), fahrenheit: appState.useFahrenheit)
                 TemperatureRow(label: "RAM", value: peakTemp(prefixes: ["TR", "Tm", "TM"]), fahrenheit: appState.useFahrenheit)
-                TemperatureRow(label: "SSD", value: peakTemp(prefixes: ["TH"]), fahrenheit: appState.useFahrenheit)
+                TemperatureRow(label: "SSD", value: peakTemp(prefixes: MenuBarSensor.ssd.prefixes), fahrenheit: appState.useFahrenheit)
                 TemperatureRow(label: "Ambient", value: peakTemp(prefixes: ["TA"]), fahrenheit: appState.useFahrenheit)
             } else {
                 Text("Reading sensors...")
@@ -166,10 +166,22 @@ struct MenuBarView: View {
             Divider().padding(.vertical, 4)
 
             // Footer
-            Toggle("°F / °C", isOn: $appState.useFahrenheit)
-                .padding(.horizontal, 12)
-            Toggle("Launch at Login", isOn: $appState.launchAtLogin)
-                .padding(.horizontal, 12)
+            VStack(alignment: .leading, spacing: 6) {
+                Toggle("°F / °C", isOn: $appState.useFahrenheit)
+                settingRow("Menu bar") {
+                    Picker("Menu bar", selection: $appState.menuBarContent) {
+                        ForEach(MenuBarContent.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                }
+                settingRow("Sensor") {
+                    Picker("Sensor", selection: $appState.menuBarSensor) {
+                        ForEach(MenuBarSensor.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                }
+                .disabled(appState.menuBarContent == .iconOnly)
+                Toggle("Launch at Login", isOn: $appState.launchAtLogin)
+            }
+            .padding(.horizontal, 12)
 
             Button(action: { NSApp.terminate(nil) }) {
                 Text("Quit ThermalForge")
@@ -204,9 +216,19 @@ struct MenuBarView: View {
     }
 
     private func peakTemp(prefixes: [String]) -> Float? {
-        guard let temps = appState.latestStatus?.temperatures else { return nil }
-        let values = temps.filter { key, _ in prefixes.contains(where: { key.hasPrefix($0) }) }.values
-        return values.max()
+        appState.latestStatus?.peakTemperature(prefixes: prefixes)
+    }
+
+    /// Label left, control right, like the footer toggles.
+    private func settingRow<Control: View>(_ title: String, @ViewBuilder control: () -> Control) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            control()
+                .labelsHidden()
+                .fixedSize()
+                .controlSize(.small)
+        }
     }
 }
 

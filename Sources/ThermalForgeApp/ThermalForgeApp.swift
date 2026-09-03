@@ -51,7 +51,7 @@ struct ThermalForgeApp: App {
                 state: appState.monitorState,
                 maxTemp: appState.maxTemp,
                 fahrenheit: appState.useFahrenheit,
-                needsDaemonUpdate: appState.daemonVersionMismatch != nil
+                content: appState.menuBarContent
             )
         }
         .menuBarExtraStyle(.window)
@@ -64,27 +64,44 @@ struct MenuBarLabel: View {
     let state: MonitorState
     let maxTemp: Float?
     var fahrenheit: Bool = false
-    var needsDaemonUpdate: Bool = false
+    var content: MenuBarContent = .iconAndTemperature
 
     var body: some View {
+        // MenuBarExtra copies a label's Text into the status item title and drops every
+        // modifier on it, so digits come out proportional and the item's width jitters
+        // as the number changes. A pre-rendered template image is the only form the
+        // menu bar displays untouched.
+        Image(nsImage: rendered)
+    }
+
+    private var rendered: NSImage {
+        let renderer = ImageRenderer(content: label)
+        renderer.scale = NSScreen.screens.map(\.backingScaleFactor).max() ?? 2
+        let image = renderer.nsImage ?? NSImage()
+        image.isTemplate = true
+        return image
+    }
+
+    private var temperature: Float? { content.showsTemperature ? maxTemp : nil }
+
+    /// Temperature-only still shows the icon when there is nothing to show yet, and
+    /// during a safety override, so the item is never blank or silent.
+    private var showsIcon: Bool {
+        content != .temperatureOnly || temperature == nil || state == .safetyOverride
+    }
+
+    private var label: some View {
         HStack(spacing: 3) {
-            Image(systemName: iconName)
-                .overlay(alignment: .topTrailing) {
-                    // Small dot when the daemon is out of sync — visible without
-                    // opening the menu, for users who never touch the CLI.
-                    if needsDaemonUpdate {
-                        Circle()
-                            .fill(.orange)
-                            .frame(width: 5, height: 5)
-                            .offset(x: 3, y: -2)
-                    }
-                }
-            if let tempC = maxTemp {
+            if showsIcon {
+                Image(systemName: iconName)
+            }
+            if let tempC = temperature {
                 let display = fahrenheit ? tempC * 9 / 5 + 32 : tempC
                 Text("\(Int(display))°")
-                    .font(.system(.caption, design: .monospaced))
+                    .font(.system(size: 13).monospacedDigit())
             }
         }
+        .foregroundStyle(.black)
     }
 
     private var iconName: String {

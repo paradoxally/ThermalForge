@@ -18,6 +18,15 @@ final class AppState: ObservableObject {
     @Published var useFahrenheit: Bool = UserDefaults.standard.bool(forKey: "useFahrenheit") {
         didSet { UserDefaults.standard.set(useFahrenheit, forKey: "useFahrenheit") }
     }
+    @Published var menuBarContent: MenuBarContent = .stored(UserDefaults.standard.string(forKey: "menuBarContent")) {
+        didSet { UserDefaults.standard.set(menuBarContent.rawValue, forKey: "menuBarContent") }
+    }
+    @Published var menuBarSensor: MenuBarSensor = .stored(UserDefaults.standard.string(forKey: "menuBarSensor")) {
+        didSet {
+            UserDefaults.standard.set(menuBarSensor.rawValue, forKey: "menuBarSensor")
+            maxTemp = latestStatus?.peakTemperature(prefixes: menuBarSensor.prefixes)
+        }
+    }
     /// Reflects the current SMAppService login-item status so the menu toggle shows the
     /// right state. Initialized from that status as the property's DEFAULT (not reassigned
     /// in init), so `didSet` does NOT fire on launch — reading the state must never
@@ -345,15 +354,11 @@ final class AppState: ObservableObject {
         let monitor = ThermalMonitor(fanControl: fc, profile: activeProfile)
         monitor.onUpdate = { [weak self] status, profile, state in
             Task { @MainActor [weak self] in
-                self?.latestStatus = status
-                self?.activeProfile = profile
-                self?.monitorState = state
-                // Max of only the displayed sensors
-                // Peak across all CPU and GPU sensors for menu bar display
-                let displayPrefixes = ["TC", "Tp", "TG", "Tg"]
-                self?.maxTemp = status.temperatures
-                    .filter { key, _ in displayPrefixes.contains(where: { key.hasPrefix($0) }) }
-                    .values.max()
+                guard let self else { return }
+                self.latestStatus = status
+                self.activeProfile = profile
+                self.monitorState = state
+                self.maxTemp = status.peakTemperature(prefixes: self.menuBarSensor.prefixes)
             }
         }
         monitor.onFanCommand = { [weak self] command in

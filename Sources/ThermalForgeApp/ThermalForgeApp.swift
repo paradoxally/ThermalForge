@@ -87,11 +87,9 @@ struct MenuBarLabel: View {
 
     private var temperature: Float? { content.showsTemperature ? maxTemp : nil }
 
-    /// Temperature-only shows the icon only until the first reading arrives. The alert
-    /// is signalled by colour, not by adding an icon, so it can't widen the item.
-    private var showsIcon: Bool {
-        content != .temperatureOnly || temperature == nil
-    }
+    /// Temperature-only never shows an icon: the alert is signalled by colour, so it
+    /// can't widen the item.
+    private var showsIcon: Bool { content != .temperatureOnly }
 
     private static let iconNames = ["fan", "fan.fill", "exclamationmark.triangle.fill"]
 
@@ -100,8 +98,10 @@ struct MenuBarLabel: View {
             if showsIcon {
                 iconSlot
             }
-            if let temperatureText {
-                temperatureSlot(temperatureText)
+            if content.showsTemperature {
+                // A placeholder holds the slot until a reading arrives, or when the chosen
+                // sensor has none, so the item never changes width over it.
+                temperatureSlot(temperatureText ?? "—°")
             }
         }
         .foregroundStyle(isAlert ? Color.red : Color.black)

@@ -9,7 +9,10 @@ set -e
 cd "$(dirname "$0")"
 
 echo "Building ThermalForge..."
-swift build -c release --quiet
+# Swift 6.4's default build system stamps the binary with the deployment target
+# (macOS 14) instead of the SDK it was built with, so macOS draws the app in the
+# pre-Tahoe style without Liquid Glass. The native build system stamps it correctly.
+swift build -c release --quiet --build-system native
 
 echo "Installing (requires admin password once)..."
 

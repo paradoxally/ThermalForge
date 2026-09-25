@@ -78,30 +78,58 @@ struct MenuBarLabel: View {
         let renderer = ImageRenderer(content: label)
         renderer.scale = NSScreen.screens.map(\.backingScaleFactor).max() ?? 2
         let image = renderer.nsImage ?? NSImage()
-        image.isTemplate = true
+        // A template image is forced monochrome; the alert has to stay red.
+        image.isTemplate = !isAlert
         return image
     }
 
+    private var isAlert: Bool { state == .safetyOverride }
+
     private var temperature: Float? { content.showsTemperature ? maxTemp : nil }
 
-    /// Temperature-only still shows the icon when there is nothing to show yet, and
-    /// during a safety override, so the item is never blank or silent.
+    /// Temperature-only shows the icon only until the first reading arrives. The alert
+    /// is signalled by colour, not by adding an icon, so it can't widen the item.
     private var showsIcon: Bool {
-        content != .temperatureOnly || temperature == nil || state == .safetyOverride
+        content != .temperatureOnly || temperature == nil
     }
+
+    private static let iconNames = ["fan", "fan.fill", "exclamationmark.triangle.fill"]
 
     private var label: some View {
         HStack(spacing: 3) {
             if showsIcon {
-                Image(systemName: iconName)
+                iconSlot
             }
-            if let tempC = temperature {
-                let display = fahrenheit ? tempC * 9 / 5 + 32 : tempC
-                Text("\(Int(display))°")
-                    .font(.system(size: 13).monospacedDigit())
+            if let temperatureText {
+                temperatureSlot(temperatureText)
             }
         }
-        .foregroundStyle(.black)
+        .foregroundStyle(isAlert ? Color.red : Color.black)
+    }
+
+    private var temperatureText: String? {
+        guard let tempC = temperature else { return nil }
+        let display = fahrenheit ? tempC * 9 / 5 + 32 : tempC
+        return "\(Int(display))°"
+    }
+
+    /// Always three digits wide, so crossing 100° can't widen the item. Centred, so a
+    /// two-digit reading splits the spare room across both sides instead of leaving a
+    /// gap on one.
+    private func temperatureSlot(_ text: String) -> some View {
+        let font = Font.system(size: 13).monospacedDigit()
+        return ZStack {
+            Text("000°").font(font).hidden()
+            Text(text).font(font)
+        }
+    }
+
+    /// Sized to the widest symbol so swapping fan for the alert triangle can't shift the digits.
+    private var iconSlot: some View {
+        ZStack {
+            ForEach(Self.iconNames, id: \.self) { Image(systemName: $0).hidden() }
+            Image(systemName: iconName)
+        }
     }
 
     private var iconName: String {

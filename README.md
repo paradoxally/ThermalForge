@@ -1,13 +1,15 @@
 # ThermalForge
 
-**Free, open-source fan control for Apple Silicon Macs.** Menu bar app + CLI.
+**Free Apple fan control, open source, for Apple Silicon Macs (M1, M2, M3, M4, M5, M6): Mac mini, MacBook, MacBook Pro, Mac Studio, iMac.** Menu bar app + CLI.
 
 Built in 2026 with Swift. No subscriptions, no telemetry, no ads.
+
+ThermalForge by [Producer Guy](https://github.com/ProducerGuy)
 
 [![CI](https://github.com/ProducerGuy/ThermalForge/actions/workflows/ci.yml/badge.svg)](https://github.com/ProducerGuy/ThermalForge/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![macOS 14+](https://img.shields.io/badge/macOS-14%2B-black?logo=apple)](https://www.apple.com/macos/)
-[![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-M1%E2%80%93M5-orange)](https://support.apple.com/en-us/116943)
+[![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-M1%2C%20M2%2C%20M3%2C%20M4%2C%20M5%2C%20M6-orange)](https://support.apple.com/en-us/116943)
 
 ---
 
@@ -29,7 +31,7 @@ Tools like **Macs Fan Control** and **TG Pro** charge $15–$20 for fan control 
 | Process correlation in logs | **Yes** | No | No |
 | Sleep/wake re-apply | Yes | Yes | Yes |
 | Safety override (95°C) | **Yes — daemon-enforced, works with app closed** | No | Requires manual setup |
-| Crash recovery (heartbeat watchdog) | **Yes — daemon-enforced, holds during overheat** | Reverts on quit only | Override removes macOS safety |
+| Crash recovery (heartbeat watchdog) | **Yes — daemon-enforced, hands fans back to Apple** | Reverts on quit only | Override removes macOS safety |
 | Open source | **Yes** | No | No |
 | Price | **Free** | $15 | $20 |
 
@@ -49,7 +51,7 @@ Tools like **Macs Fan Control** and **TG Pro** charge $15–$20 for fan control 
 - Automatic fan re-apply after sleep/wake
 - Fahrenheit / Celsius toggle
 - Safety override: the background daemon forces fans to maximum if a critical sensor crosses 95°C while a manual hold is keeping them too low — enforced in the daemon, so it works even with the menu bar app closed
-- Crash recovery: the daemon's heartbeat watchdog resets fans to Apple defaults if the app dies — and if a thermal safety override is active, it holds fans at max and defers the reset until the machine cools, so it never hands hot fans back to auto
+- Crash recovery: the daemon's heartbeat watchdog resets fans to Apple defaults if the app dies, even while a thermal safety override is active. Apple's own fan control takes over, hot or not
 - Temperature anomaly detection: logs instant spikes (>5°C in 2s) and sustained changes (>10°C in 30s) with process capture
 - Privileged daemon — one-time sudo, zero password prompts after
 - Native Swift — lightweight, no Electron, no bloat
@@ -171,7 +173,7 @@ This always works, even if the app isn't running. It stops ThermalForge and hand
 ```bash
 sudo thermalforge uninstall
 ```
-Removes the daemon, binary, app, and all logs. Clean slate.
+Removes the background daemon, the `thermalforge` binary in `/usr/local/bin`, the menu bar app, and the daemon's logs. Your calibration and custom profiles, plus your recordings unless you saved them elsewhere, stay in `~/Library/Application Support/ThermalForge`, and the app's logs stay in `~/Library/Logs/ThermalForge`. Delete those folders yourself if you want a clean slate.
 
 If installed via Homebrew, run `brew uninstall thermalforge` first.
 
@@ -202,7 +204,12 @@ Set fans from the terminal and the menu bar app shows a **"Fans held from Termin
 
 ## Compatibility
 
-Tested on MacBook Pro M5 Max (Mac17,7). Should work on M1–M5 MacBooks.
+Supports Apple Silicon Macs.
+
+Supported devices: Mac mini, MacBook, MacBook Pro, Mac Studio, iMac.
+
+Supported chips: M1, M2, M3, M4, M5, M6.
+
 Run `thermalforge discover` on your machine and [submit a compatibility report](../../issues/new?template=compatibility-report.md).
 
 | Machine | Chip | Status |
@@ -210,9 +217,12 @@ Run `thermalforge discover` on your machine and [submit a compatibility report](
 | MacBook Pro 16" (2025) | M5 Max | Tested |
 | Mac Studio (2022) | M2 Ultra | Tested |
 | MacBook Pro 16" (2021) | M1 Max | Tested |
+| Mac mini (2026) | M5 Pro | Tested |
+| Mac mini (2026) | M6 | Tested |
 | MacBook Pro 16" M5 Pro (Mac17,8) | M5 Pro | Reported |
 | MacBook Pro 14" M5 Pro (Mac17,9) | M5 Pro | Reported |
 | MacBook Pro M4 Max (Mac16,5) | M4 Max | Reported |
+| MacBook Pro 14" M4 Pro (2024) | M4 Pro | Reported |
 | MacBook Pro M3 Max (2023, 128GB) | M3 Max | Reported |
 | MacBook Pro 14" M2 Pro (2023) | M2 Pro | Reported |
 | MacBook Pro 14" M2 Max (2023) | M2 Max | Reported |

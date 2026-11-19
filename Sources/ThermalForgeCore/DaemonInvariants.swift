@@ -71,3 +71,160 @@ public struct ThermalFloor {
         return .engage
     }
 }
+
+// MARK: - Daemon start and stop (#31)
+
+/// What a freshly started daemon does about the fans. It starts holding nothing,
+/// so fans left under manual control — by a daemon killed mid-hold, a crash, or a
+/// direct root SMC write made while no daemon ran — would stay pinned with no
+/// thermal floor or wake re-apply behind them. Release them to Apple. Adopting
+/// instead isn't possible: the SMC records no owner, so a CLI hold can't be told
+/// from a dead app's curve point, and per-fan targets don't fit one hold command.
+/// The SMC access is injected so this tests without root.
+public enum StartupFanReconcile {
+    public enum Outcome: Equatable {
+        case alreadyAuto
+        case reset
+        /// The SMC couldn't be read, so we reset anyway: auto is the safe state.
+        case resetAfterUnreadable
+        case resetFailed(String)
+    }
+
+    public static func run(manualControlEngaged: () throws -> Bool,
+                           resetAuto: () throws -> Void) -> Outcome {
+        let unreadable: Bool
+        do {
+            guard try manualControlEngaged() else { return .alreadyAuto }
+            unreadable = false
+        } catch {
+            unreadable = true
+        }
+        do {
+            try resetAuto()
+            return unreadable ? .resetAfterUnreadable : .reset
+        } catch {
+            return .resetFailed("\(error)")
+        }
+    }
+}
+
+/// The heartbeat watchdog's call on a supervised (app) hold: revert it once the
+/// app has gone quiet for longer than `timeout`. CLI holds never reach this. The
+/// thermal floor's state is deliberately not an input — Apple's auto control is
+/// the safe default even on a hot machine, so a dead app's hold is always handed
+/// back to it.
+public enum HeartbeatWatchdog {
+    public static let timeout: TimeInterval = 15
+
+    public static func revertsHold(lastBeat: Date, now: Date) -> Bool {
+        now.timeIntervalSince(lastBeat) > timeout
+    }
+}
+
+/// What the daemon does on SIGTERM (a bootout, or a manual kill): release the
+/// fans only if it was controlling them, so it never touches fans it doesn't own.
+public enum DaemonShutdown {
+    public static func releasesFans(holding: Bool, safetySuspended: Bool) -> Bool {
+        holding || safetySuspended
+    }
+}
+
+// MARK: - Peer authentication
+
+/// A connected peer's effective uid/gid, as the kernel recorded them at connect().
+struct PeerCredentials: Equatable {
+    let uid: uid_t
+    let gid: gid_t
+}
+
+/// Why a peer's credentials couldn't be read. Any such failure is a rejection.
+struct PeerCredentialError: Error, Equatable {
+    let errno: Int32
+}
+
+/// The per-connection peer check's verdict. Only `.allow` gets a handler.
+enum PeerDecision: Equatable {
+    case allow(PeerCredentials)
+    case reject(PeerCredentials)
+    case unavailable(errno: Int32)
+}
+
+/// What ConnectionServer needs from a peer check: a verdict per accepted fd, and the
+/// allowed set for the rejection log. Injected so tests can supply a fake.
+protocol PeerAuthorizing {
+    func decide(fd: Int32) -> PeerDecision
+    var allowedDescription: String { get }
+}
+
+/// Second layer behind the socket's 0600 permissions: only root and the daemon's
+/// owner may talk to it. Credentials come from getpeereid(), which reads the
+/// LOCAL_PEERCRED copy the kernel took at connect() — still valid after the peer
+/// exits, so the check can't race the peer going away.
+struct PeerAuthorizer: PeerAuthorizing {
+    let ownerUID: uid_t
+    private let credentials: (Int32) -> Result<PeerCredentials, PeerCredentialError>
+
+    init(ownerUID: uid_t,
+         credentials: @escaping (Int32) -> Result<PeerCredentials, PeerCredentialError> = PeerAuthorizer.kernelCredentials) {
+        self.ownerUID = ownerUID
+        self.credentials = credentials
+    }
+
+    /// True only for root and the owner.
+    static func allows(uid: uid_t, ownerUID: uid_t) -> Bool {
+        uid == 0 || uid == ownerUID
+    }
+
+    func decide(fd: Int32) -> PeerDecision {
+        switch credentials(fd) {
+        case .success(let peer):
+            return Self.allows(uid: peer.uid, ownerUID: ownerUID) ? .allow(peer) : .reject(peer)
+        case .failure(let error):
+            return .unavailable(errno: error.errno)
+        }
+    }
+
+    var allowedDescription: String { "uid 0, owner uid \(ownerUID)" }
+
+    static func kernelCredentials(_ fd: Int32) -> Result<PeerCredentials, PeerCredentialError> {
+        // Start from values that can never pass the policy, so no path defaults to root.
+        var uid = uid_t.max
+        var gid = gid_t.max
+        guard getpeereid(fd, &uid, &gid) == 0 else {
+            return .failure(PeerCredentialError(errno: errno))
+        }
+        return .success(PeerCredentials(uid: uid, gid: gid))
+    }
+}
+
+/// Bounds the rejection log so a hostile local process can't flood the system log:
+/// a burst of 5 lines, then one per minute. Suppressed rejections are counted; the
+/// count rides on the next line that gets through, or on the summary the caller
+/// emits from its one-shot timer (`flush`). The clock is injected for tests.
+struct RejectionLogLimiter {
+    private var limiter: RateLimiter
+    private(set) var suppressed = 0
+
+    init(now: Date) {
+        limiter = RateLimiter(capacity: 5, refillPerSecond: 1.0 / 60, now: now)
+    }
+
+    /// The line to log for this rejection, or nil when it's suppressed.
+    mutating func record(_ message: String, now: Date) -> String? {
+        guard limiter.allow(now: now) else {
+            suppressed += 1
+            return nil
+        }
+        defer { suppressed = 0 }
+        return suppressed > 0
+            ? "\(message) (\(suppressed) earlier rejections suppressed)"
+            : message
+    }
+
+    /// Summary of rejections suppressed since the last line, or nil if none.
+    mutating func flush() -> String? {
+        guard suppressed > 0 else { return nil }
+        defer { suppressed = 0 }
+        return "ThermalForge daemon: \(suppressed) further peer rejections suppressed"
+    }
+}
